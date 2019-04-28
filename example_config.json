@@ -1,0 +1,6 @@
+{
+"basedir": "phabry_data",
+"name": "freebsd",
+"url": "https://reviews.freebsd.org/api/",
+"token": "get-conduit-api-token-from-uesr-profile"
+}
