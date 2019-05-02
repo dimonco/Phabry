@@ -133,8 +133,6 @@ class Phabry(object):
                                                              exception))
 
     def get_revisions(self, next_page, order, limit=100):
-        revisions = []
-
         data = {'api.token': self.token,
                 'constraints[createdStart]': self.from_date,
                 'constraints[createdEnd]': self.to_date,
@@ -148,54 +146,69 @@ class Phabry(object):
         response = requests.post(self.url + 'differential.revision.search', data = data)
         response.raise_for_status()
 
-        revisions_subset = json.loads(response.text)
-        revisions += revisions_subset['result']['data']
-        if revisions_subset['result']['cursor']['after'] is None:
+        revisions = json.loads(response.text)
+        if revisions['result']['cursor']['after'] is None:
             next_page = False
         else:
-            next_page = revisions_subset['result']['cursor']['after']
+            next_page = revisions['result']['cursor']['after']
         return (revisions, next_page)
 
-    def get_details(self, revision):
+    def get_transactions(self, revision, next_page):
         data = {'api.token': self.token,
-                'objectIdentifier': revision['phid']
+                'objectIdentifier': revision['phid'],
+                'after': next_page
                 }
         response = requests.get(self.url + 'transaction.search', data = data)
         response.raise_for_status()
-        revision['activity'] = json.loads(response.text)['result']['data']
-        return revision
+
+        transactions = json.loads(response.text)
+        if transactions['result']['cursor']['after'] is None:
+            next_page = False
+        else:
+            next_page = transactions['result']['cursor']['after']
+        return (transactions, next_page)
 
 
     def run(self):
         next_page = ''
         print('Writing revisions to ' + self.directory)
         try:
-            last_revision = self.get_revisions(next_page, 'newest', 1)
+            (last_revision, unused_next_page) = self.get_revisions('', 'newest', 1)
         except Exception as exception:
             Phabry.handle_exception(exception, 'newest revision')
-
+        os.makedirs(os.path.join(self.directory, 'revisions'), exist_ok=True)
+        os.makedirs(os.path.join(self.directory, 'transactions'), exist_ok=True)
         while next_page is not False:
             try:
+                current_page = next_page
                 (revisions, next_page) = self.get_revisions(next_page, 'oldest')
-                print('Revisions ' + str(revisions[0]['id']) + '-' + str(revisions[-1]['id']) + ' from ' +
-                        str(last_revision[0][0]['id']) + ' (' +
-                        str(int(revisions[0]['id']) * 100 // int(last_revision[0][0]['id'])) +
+                print('Revisions ' + str(revisions['result']['data'][0]['id']) + '-' +
+                        str(revisions['result']['data'][-1]['id']) + ' from ' +
+                        str(last_revision['result']['data'][0]['id']) + ' (' +
+                        str(int(revisions['result']['data'][0]['id']) * 100 //
+                        int(last_revision['result']['data'][0]['id'])) +
                         '%) ...', end='\r')
-            except Exception as exception:
-                Phabry.handle_exception(exception, 'revisions IDs ' + str(next_page))
-            if revisions:
-                os.makedirs(os.path.join(self.directory, 'revisions'), exist_ok=True)
-            for index, rev in enumerate(revisions):
-                try:
-                    revisions[index] = self.get_details(rev)
-                except Exception as exception:
-                    Phabry.handle_exception(exception, 'revision ' + str(rev['id']))
-            file_name = str(revisions[0]['id']) + '-' + str(revisions[-1]['id']) + '.json'
-            try:
+                file_name = str(revisions['result']['data'][0]['id']) + '-' + \
+                            str(revisions['result']['data'][-1]['id']) + '.json'
                 with open(os.path.join(self.directory, 'revisions', file_name), 'w') as json_file:
                     json.dump(revisions, json_file, indent=2)
             except Exception as exception:
-                Phabry.handle_exception(exception, 'revision IDs' + str(next_page))
+                print("Getting revisions from " + str(current_page) + ' failed. Cannot continue further.' )
+                Phabry.handle_exception(exception, 'revisions IDs ' + str(current_page))
+                
+
+            for rev in revisions['result']['data']:
+                next_page_transactions = ''
+                import ipdb; ipdb.set_trace()
+                while next_page_transactions is not False:
+                    try:
+                        (transactions, next_page_transactions) = self.get_transactions(rev, next_page_transactions)
+                        file_name = str(rev['id']) + '.json'
+                        with open(os.path.join(self.directory, 'transactions', file_name), 'w') as json_file:
+                            json.dump(transactions, json_file, indent=2)
+                    except Exception as exception:
+                        Phabry.handle_exception(exception, 'transactions of revision ' + str(rev['id']))
+                        next_page_transactions = False
 
 if __name__ == '__main__':
     arguments = parse_arguments()
