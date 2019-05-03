@@ -95,12 +95,12 @@ def parse_arguments():
     if arguments.start:
         arguments.start = datetime.datetime.strptime(arguments.start, '%d-%m-%Y')
     else:
-        arguments.start = datetime.datetime(2009, 1, 1)
+        arguments.start = None
 
     if arguments.end:
         arguments.end = datetime.datetime.strptime(arguments.end, '%d-%m-%Y')
     else:
-        arguments.end = today
+        arguments.end = None
     
     return arguments
 
@@ -112,8 +112,10 @@ class Phabry(object):
         self.url = url
         self.token = token
         self.directory = os.path.join(directory, name)
-        self.from_date = str(int(from_date.replace(tzinfo=datetime.timezone.utc).timestamp()))
-        self.to_date = str(int(to_date.replace(tzinfo=datetime.timezone.utc).timestamp()))
+        self.from_date = str(int(from_date.replace(tzinfo=datetime.timezone.utc).timestamp())) if \
+                        from_date is not None else None
+        self.to_date = str(int(to_date.replace(tzinfo=datetime.timezone.utc).timestamp())) if \
+                        to_date is not None else None
         os.makedirs(self.directory, exist_ok=True)
 
     @staticmethod
@@ -134,8 +136,6 @@ class Phabry(object):
 
     def get_revisions(self, next_page, order, limit=100):
         data = {'api.token': self.token,
-                'constraints[createdStart]': self.from_date,
-                'constraints[createdEnd]': self.to_date,
                 'attachments[subscribers]': 1,
                 'attachments[reviewers]': 1,
                 'attachments[projects]': 1,
@@ -143,6 +143,10 @@ class Phabry(object):
                 'after': next_page,
                 'limit': limit
                 }
+        if self.from_date is not None:
+            data['constraints[createdStart]'] = self.from_date
+        if self.to_date is not None:
+            data['constraints[createdEnd]'] = self.to_date,
         response = requests.post(self.url + 'differential.revision.search', data = data)
         response.raise_for_status()
 
@@ -199,7 +203,6 @@ class Phabry(object):
 
             for rev in revisions['result']['data']:
                 next_page_transactions = ''
-                import ipdb; ipdb.set_trace()
                 while next_page_transactions is not False:
                     try:
                         (transactions, next_page_transactions) = self.get_transactions(rev, next_page_transactions)
