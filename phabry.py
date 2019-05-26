@@ -27,23 +27,21 @@ SOFTWARE.
 """
 __license__ = "MIT"
 
-import requests
 import json
 import os
 import argparse
 import datetime
-import glob
-import tqdm
 import logging
-import configparser
+import requests
 
-CONFIG_FILE='config.json'
+
+CONFIG_FILE = 'config.json'
 log = logging.getLogger('phabry')
 
-def config_logging(data_dir):
+def configure_logging(data_dir):
     global log
     log.setLevel(logging.DEBUG)
-    log_name = os.path.join(data_dir, 'phabry-crawl.log')
+    log_name = os.path.join(data_dir, 'phabry.log')
     formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
     file_handler = logging.FileHandler(log_name)
     file_handler.setFormatter(formatter)
@@ -56,8 +54,7 @@ def parse_arguments():
     global CONFIG_FILE 
 
     # Parse any conf_file specification
-    # We make this parser with add_help=False so that
-    # it doesn't parse -h and print help.
+    # add_help=False so it doesn't parse -h and print help.
     conf_parser = argparse.ArgumentParser(
         description=__doc__, # printed with -h/--help
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -87,22 +84,21 @@ def parse_arguments():
                         help='Base directory name')
     parser.add_argument('--start', help='Start date dd-mm-yyyy')
     parser.add_argument('--end', help='End date dd-mm-yyyy')
-    arguments = parser.parse_args(remaining_argv)
-    if None in (arguments.name, arguments.url, arguments.token):
+    args = parser.parse_args(remaining_argv)
+    if None in (args.name, args.url, args.token):
         parser.print_help()
         exit()
-    today = datetime.datetime.today().replace(hour=0, minute=0, second=0, microsecond=0)
-    if arguments.start:
-        arguments.start = datetime.datetime.strptime(arguments.start, '%d-%m-%Y')
+    if args.start:
+        args.start = datetime.datetime.strptime(args.start, '%d-%m-%Y')
     else:
-        arguments.start = None
+        args.start = None
 
-    if arguments.end:
-        arguments.end = datetime.datetime.strptime(arguments.end, '%d-%m-%Y')
+    if args.end:
+        args.end = datetime.datetime.strptime(args.end, '%d-%m-%Y')
     else:
-        arguments.end = None
+        args.end = None
     
-    return arguments
+    return args
 
 
 class Phabry(object):
@@ -122,17 +118,14 @@ class Phabry(object):
     def handle_exception(exception, change_type):
         if isinstance(exception, requests.exceptions.RequestException):
             if exception.response is not None:
-                log.error('%s failed with http status %i' % (
-                    change_type, exception.response.status_code))
+                log.error('%s failed with http status %i',
+                          change_type, exception.response.status_code)
             else:
-                log.error('%s failed with error: %s' % (change_type,
-                                                            exception))
+                log.error('%s failed with error: %s', change_type, exception)
         elif isinstance(exception, json.JSONDecodeError):
-            log.error(
-                'Reading JSON for %s failed' % (change_type))
+            log.error('Reading JSON for %s failed', change_type)
         elif isinstance(exception, Exception):
-            log.error('Unknown error occurred for %s: %s' % (change_type,
-                                                             exception))
+            log.error('Unknown error occurred for %s: %s', change_type, exception)
 
     def get_revisions(self, next_page, order, limit=100):
         data = {'api.token': self.token,
@@ -146,8 +139,8 @@ class Phabry(object):
         if self.from_date is not None:
             data['constraints[createdStart]'] = self.from_date
         if self.to_date is not None:
-            data['constraints[createdEnd]'] = self.to_date,
-        response = requests.post(self.url + 'differential.revision.search', data = data)
+            data['constraints[createdEnd]'] = self.to_date
+        response = requests.post(self.url + 'differential.revision.search', data=data)
         response.raise_for_status()
 
         revisions = json.loads(response.text)
@@ -162,7 +155,7 @@ class Phabry(object):
                 'objectIdentifier': revision['phid'],
                 'after': next_page
                 }
-        response = requests.get(self.url + 'transaction.search', data = data)
+        response = requests.get(self.url + 'transaction.search', data=data)
         response.raise_for_status()
 
         transactions = json.loads(response.text)
@@ -197,10 +190,10 @@ class Phabry(object):
                 with open(os.path.join(self.directory, 'revisions', file_name), 'w') as json_file:
                     json.dump(revisions, json_file, indent=2)
             except Exception as exception:
-                print("Getting revisions from " + str(current_page) + ' failed. Cannot continue further.' )
+                print("Getting revisions from " + str(current_page) +
+                      ' failed. Cannot continue further.')
                 Phabry.handle_exception(exception, 'revisions IDs ' + str(current_page))
                 
-
             for rev in revisions['result']['data']:
                 next_page_transactions = ''
                 while next_page_transactions is not False:
@@ -210,7 +203,8 @@ class Phabry(object):
                         with open(os.path.join(self.directory, 'transactions', file_name), 'w') as json_file:
                             json.dump(transactions, json_file, indent=2)
                     except Exception as exception:
-                        Phabry.handle_exception(exception, 'transactions of revision ' + str(rev['id']))
+                        Phabry.handle_exception(exception, 'transactions of revision '
+                                                + str(rev['id']))
                         next_page_transactions = False
 
 if __name__ == '__main__':
@@ -218,7 +212,8 @@ if __name__ == '__main__':
 
     os.makedirs(arguments.basedir, exist_ok=True)
 
-    phabry = Phabry(arguments.name, arguments.url, arguments.token, arguments.start, arguments.end, arguments.basedir)
-    config_logging(phabry.directory)
+    phabry = Phabry(arguments.name, arguments.url, arguments.token, arguments.start,
+                    arguments.end, arguments.basedir)
+    configure_logging(phabry.directory)
 
     phabry.run()
