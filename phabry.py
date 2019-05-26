@@ -51,7 +51,7 @@ def configure_logging(data_dir):
 def parse_arguments():
     """parses and sets up the command line argument system above
     with config file parsing."""
-    global CONFIG_FILE 
+    global CONFIG_FILE
 
     # Parse any conf_file specification
     # add_help=False so it doesn't parse -h and print help.
@@ -62,7 +62,7 @@ def parse_arguments():
         add_help=False
         )
     conf_parser.add_argument("-c", dest='conf_file', default=CONFIG_FILE,
-                        help="Specify config file", metavar="FILE")
+                             help="Specify config file", metavar="FILE")
     args, remaining_argv = conf_parser.parse_known_args()
     defaults = {}
 
@@ -97,7 +97,7 @@ def parse_arguments():
         args.end = datetime.datetime.strptime(args.end, '%d-%m-%Y')
     else:
         args.end = None
-    
+
     return args
 
 
@@ -180,11 +180,11 @@ class Phabry(object):
                 current_page = next_page
                 (revisions, next_page) = self.get_revisions(next_page, 'oldest')
                 print('Revisions ' + str(revisions['result']['data'][0]['id']) + '-' +
-                        str(revisions['result']['data'][-1]['id']) + ' from ' +
-                        str(last_revision['result']['data'][0]['id']) + ' (' +
-                        str(int(revisions['result']['data'][0]['id']) * 100 //
-                        int(last_revision['result']['data'][0]['id'])) +
-                        '%) ...', end='\r')
+                      str(revisions['result']['data'][-1]['id']) + ' from ' +
+                      str(last_revision['result']['data'][0]['id']) + ' (' +
+                      str(int(revisions['result']['data'][0]['id']) * 100 //
+                          int(last_revision['result']['data'][0]['id'])) +
+                      '%) ...', end='\r')
                 file_name = str(revisions['result']['data'][0]['id']) + '-' + \
                             str(revisions['result']['data'][-1]['id']) + '.json'
                 with open(os.path.join(self.directory, 'revisions', file_name), 'w') as json_file:
@@ -193,15 +193,20 @@ class Phabry(object):
                 print("Getting revisions from " + str(current_page) +
                       ' failed. Cannot continue further.')
                 Phabry.handle_exception(exception, 'revisions IDs ' + str(current_page))
-                
+
             for rev in revisions['result']['data']:
                 next_page_transactions = ''
+                file_count = 0
                 while next_page_transactions is not False:
                     try:
-                        (transactions, next_page_transactions) = self.get_transactions(rev, next_page_transactions)
-                        file_name = str(rev['id']) + '.json'
-                        with open(os.path.join(self.directory, 'transactions', file_name), 'w') as json_file:
+                        (transactions, next_page_transactions) = \
+                            self.get_transactions(rev, next_page_transactions)
+                        file_name = str(rev['id']) + '_' + str(file_count) + '.json'
+                        with open(os.path.join(self.directory, 'transactions', file_name),
+                                  'w') as json_file:
                             json.dump(transactions, json_file, indent=2)
+                        if next_page_transactions is not False:
+                            file_count += 1
                     except Exception as exception:
                         Phabry.handle_exception(exception, 'transactions of revision '
                                                 + str(rev['id']))
