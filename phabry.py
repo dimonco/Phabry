@@ -65,14 +65,15 @@ def parse_arguments():
                              help="Specify config file", metavar="FILE")
     args, remaining_argv = conf_parser.parse_known_args()
     defaults = {}
-
     if args.conf_file:
         try:
             with open(args.conf_file) as f:
                 config = json.load(f)
-                defaults.update(config)
+                defaults.update({k.lower(): v for k, v in config.items()})
         except FileNotFoundError:
             print('Config file not found: ' + args.conf_file)
+        except json.decoder.JSONDecodeError:
+            print('Config file parsing failed. Please format it as json object')
 
     # Parse the rest of arguments
     parser = argparse.ArgumentParser(parents=[conf_parser])
@@ -87,14 +88,23 @@ def parse_arguments():
     args = parser.parse_args(remaining_argv)
     if None in (args.name, args.url, args.token):
         parser.print_help()
+        print("phabry.py: error: the following arguments are required:", end='')
+        if args.name is None:
+            print(" --name", end='')
+        if args.url is None:
+            print(" --url", end='')
+        if args.token is None:
+            print(" --token", end='')
         exit()
     if args.start:
-        args.start = datetime.datetime.strptime(args.start, '%d-%m-%Y')
+        start_date = datetime.datetime.strptime(args.start, '%d-%m-%Y')
+        args.start = int(start_date.replace(tzinfo=datetime.timezone.utc).timestamp())
     else:
         args.start = None
 
     if args.end:
-        args.end = datetime.datetime.strptime(args.end, '%d-%m-%Y')
+        end_date = datetime.datetime.strptime(args.end, '%d-%m-%Y')
+        args.end = int(end_date.replace(tzinfo=datetime.timezone.utc).timestamp())
     else:
         args.end = None
 
@@ -102,17 +112,16 @@ def parse_arguments():
 
 
 class Phabry(object):
-    def __init__(self, name, url, token, from_date, to_date,
-                 directory='./phabry_data/'):
+    def __init__(self, name, url, token, from_date, to_date, basedir='./phabry_data/'):
         self.name = name
         self.url = url
         self.token = token
-        self.directory = os.path.join(directory, name)
-        self.from_date = str(int(from_date.replace(tzinfo=datetime.timezone.utc).timestamp())) if \
-                        from_date is not None else None
-        self.to_date = str(int(to_date.replace(tzinfo=datetime.timezone.utc).timestamp())) if \
-                        to_date is not None else None
-        os.makedirs(self.directory, exist_ok=True)
+        self.directory = os.path.join(basedir, name)
+        self.from_date = from_date
+        self.to_date = to_date
+        os.makedirs(os.path.join(self.directory, 'revisions'), exist_ok=True)
+        os.makedirs(os.path.join(self.directory, 'transactions'), exist_ok=True)
+        configure_logging(self.directory)
 
     @staticmethod
     def handle_exception(exception, change_type):
@@ -214,11 +223,6 @@ class Phabry(object):
 
 if __name__ == '__main__':
     arguments = parse_arguments()
-
-    os.makedirs(arguments.basedir, exist_ok=True)
-
     phabry = Phabry(arguments.name, arguments.url, arguments.token, arguments.start,
                     arguments.end, arguments.basedir)
-    configure_logging(phabry.directory)
-
     phabry.run()
