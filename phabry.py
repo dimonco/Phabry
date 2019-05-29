@@ -158,11 +158,7 @@ class Phabry(object):
         if revisions["error_code"] is not None:
             raise requests.exceptions.RequestException(revisions["error_code"],
                                                        revisions["error_info"])
-        if revisions['result']['cursor']['after'] is None:
-            after_cursor = False
-        else:
-            after_cursor = revisions['result']['cursor']['after']
-        return (revisions, after_cursor)
+        return revisions
 
     def get_transactions(self, revision_phid, after_cursor):
         data = {'api.token': self.token,
@@ -175,26 +171,22 @@ class Phabry(object):
         if transactions["error_code"] is not None:
             raise requests.exceptions.RequestException(transactions["error_code"],
                                                        transactions["error_info"])
-        if transactions['result']['cursor']['after'] is None:
-            after_cursor = False
-        else:
-            after_cursor = transactions['result']['cursor']['after']
-        return (transactions, after_cursor)
-
+        return transactions
 
     def run(self):
         after_cursor = ''
         first_rev_id = 0
         print('Writing revisions to ' + self.directory)
         try:
-            (last_revision, unused_after_cursor) = self.get_revisions('', 'newest', 1)
+            last_revision = self.get_revisions('', 'newest', 1)
             last_rev_id = last_revision['result']['data'][0]['id']
         except Exception as exception:
             print("Getting the latest revision failed. Cannot continue further.")
             raise exception
-        while after_cursor is not False:
+        while after_cursor is not None:
             try:
-                (revisions, after_cursor) = self.get_revisions(after_cursor, 'oldest')
+                revisions = self.get_revisions(after_cursor, 'oldest')
+                after_cursor = revisions['result']['cursor']['after']
                 current_first_rev_id = revisions['result']['data'][0]['id']
                 current_last_rev_id = revisions['result']['data'][-1]['id']
                 if first_rev_id == 0:
@@ -204,32 +196,31 @@ class Phabry(object):
                       str((current_first_rev_id - first_rev_id) * 100 //
                           (last_rev_id - first_rev_id)) +
                       '%) ...', end='\r')
-                file_name = str(first_rev_id) + '-' + \
-                            str(last_rev_id) + '.json'
+                file_name = str(current_first_rev_id) + '-' + str(current_last_rev_id) + '.json'
                 with open(os.path.join(self.directory, 'revisions', file_name), 'w') as json_file:
                     json.dump(revisions, json_file, indent=2)
-            except Exception as exception:
+            except (requests.exceptions.RequestException, json.JSONDecodeError) as exception:
                 after_cursor = '0' if after_cursor == '' else after_cursor
-                print("Getting the revisions after {}. Cannot continue further.".format(after_cursor))
+                print("Getting revisions after {}. Cannot continue further.".format(after_cursor))
                 raise exception
 
             for rev in revisions['result']['data']:
                 after_cursor_transactions = ''
                 file_count = 0
-                while after_cursor_transactions is not False:
+                while after_cursor_transactions is not None:
                     try:
-                        (transactions, after_cursor_transactions) = \
-                            self.get_transactions(rev['phid'], after_cursor_transactions)
+                        transactions = self.get_transactions(rev['phid'], after_cursor_transactions)
+                        after_cursor_transactions = transactions['result']['cursor']['after']
                         file_name = str(rev['id']) + '_' + str(file_count) + '.json'
                         with open(os.path.join(self.directory, 'transactions', file_name),
                                   'w') as json_file:
                             json.dump(transactions, json_file, indent=2)
-                        if after_cursor_transactions is not False:
+                        if after_cursor_transactions is not None:
                             file_count += 1
                     except Exception as exception:
                         Phabry.handle_exception(exception, 'transactions of revision '
                                                 + str(rev['id']))
-                        after_cursor_transactions = False
+                        after_cursor_transactions = None
 
 if __name__ == '__main__':
     arguments = parse_arguments()
